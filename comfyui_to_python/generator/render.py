@@ -1,20 +1,15 @@
 import inspect
+import logging
 from pprint import pformat
 from typing import Any
 
 import black
 
 from ..node_runtime import import_custom_nodes
-from .generated_helpers import (
-    add_comfyui_directory_to_sys_path,
-    add_extra_model_paths,
-    bootstrap_comfyui_runtime,
-    cleanup_comfyui_runtime,
-    find_path,
-    get_comfyui_path,
-    get_value_at_index,
-)
+from .embedded_modules import get_embedded_helpers
 from .model import GenerationPlan
+
+log = logging.getLogger(__name__)
 
 
 class WorkflowRenderer:
@@ -29,26 +24,25 @@ class WorkflowRenderer:
                 {"workflow": plan.metadata_workflow_data}
             )
 
-        func_strings = []
-        for func in [
-            get_value_at_index,
-            get_comfyui_path,
-            find_path,
-            add_comfyui_directory_to_sys_path,
-            add_extra_model_paths,
-            bootstrap_comfyui_runtime,
-            cleanup_comfyui_runtime,
-        ]:
-            func_strings.append(f"\n{inspect.getsource(func)}")
+        # Auto-discover all helpers from contributing runtime modules.
+        # Reads source files, strips imports, embeds definitions — so internal
+        # cross-calls always resolve (no NameError from missing __all__ entries).
+        embedded_helpers = get_embedded_helpers()
 
         static_imports = [
             "# Imports",
+            "import gc",
+            "import importlib.util",
             "import json",
+            "import logging",
             "import os",
             "import random",
             "import sys",
+            "import warnings",
             "from typing import Sequence, Mapping, Any, Union",
-        ] + func_strings
+            "",
+            "log = logging.getLogger(__name__)",
+        ] + [embedded_helpers]
 
         if plan.custom_nodes:
             static_imports.append(f"\n{inspect.getsource(import_custom_nodes)}\n")
